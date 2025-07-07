@@ -1,55 +1,40 @@
-// server.js
-
-// Secure backend server for RP Real Estate Evaluator
-// It safely connects to Google Gemini API
-
 const express = require('express');
-const fetch = require('node-fetch');
 const cors = require('cors');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 3000; // ? Render compatible
+app.use(cors());
+app.use(express.json());
 
-// API key stored in environment variable (safer for Render)
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-app.use(express.json());
-app.use(cors());
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// API endpoint for frontend
 app.post('/api/generate', async (req, res) => {
+  try {
     const { prompt } = req.body;
 
-    if (!prompt) {
-        return res.status(400).send('Prompt is required');
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+    const result = await model.generateContentStream(prompt);
+
+    res.setHeader('Content-Type', 'text/plain');
+
+    for await (const chunk of result.stream) {
+      const chunkText = chunk.text();
+      if (chunkText) {
+        res.write(chunkText);
+      }
     }
-
-    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:streamGenerateContent?key=${GEMINI_API_KEY}&alt=sse`;
-
-    try {
-        const geminiResponse = await fetch(apiEndpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-            })
-        });
-
-        if (!geminiResponse.ok) {
-            throw new Error(`Google API Error: ${geminiResponse.status} ${geminiResponse.statusText}`);
-        }
-
-        res.setHeader('Content-Type', 'text/plain');
-        geminiResponse.body.pipe(res);
-
-    } catch (error) {
-        console.error('Error calling Google Gemini API:', error);
-        res.status(500).send('Failed to get response from AI service.');
-    }
+    res.end();
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('An error occurred while generating content.');
+  }
 });
 
+const port = process.env.PORT;  // ✅ Correct line for Render (NO default port)
 app.listen(port, () => {
-    console.log(`RP Backend Server is running on port ${port}`);
+  console.log(`RP Backend Server is running on port ${port}`);
 });
